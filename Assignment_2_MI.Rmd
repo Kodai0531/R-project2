@@ -1,0 +1,70 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+########################################################
+##################### Assignment 2 #####################
+########################################################
+Assignment
+Dataset: “MI” 
+About: 
+- Patients that enter hospital with a myocardial infarction. 
+- The dataset includes information on the patient at the acceptance in the hospital after the first evaluation. 
+- This includes the medical history of the patient, past cardiac problems for example, as well as immediate measurements on the patient, including blood pressure and blood analysis. 
+- The response variable (LET_IS) is death of the patient during their stay. 
+- In other words, we try to predict from our initial data if the patient is at an elevated risk to die during their hospital stay.
+
+1. Study and describe the predictor variables. Do you see any issues that are relevant for making predictions? Make sure to discuss the dimensionality of the data and the implication on fit- ting models.
+2. Fit and compare an appropriate unconstrained linear model, as well as lasso and ridge regression models. Discuss what you find. What is an appropriate base-level of performance to com- pare your models to?
+3. Among your top predictors, do you see evidence of non-linear effects? How could you accom- modate non-linear effects and still use a regularized regression approach? Does adding non- linear effects improve your model?
+4. Fit an appropriate Random Forest model. Report a comparison of performance to your linear model and explain any differences in performance. Do you see an important difference in how variables are used for predictions?
+---
+
+```{r}
+MI = read.csv(file = file.choose(), header=T)
+head(MI) #
+```
+1. Study and describe the predictor variables. Do you see any issues that are relevant for making predictions? Make sure to discuss the dimensionality of the data and the implication on fitting models.
+
+```{r}
+
+
+
+```
+
+2. Fit and compare an appropriate unconstrained linear model, as well as lasso and ridge regression models. Discuss what you find. What is an appropriate base-level of performance to com- pare your models to?
+```{r}
+
+```
+3. Among your top predictors, do you see evidence of non-linear effects? How could you accom- modate non-linear effects and still use a regularized regression approach? Does adding non- linear effects improve your model?
+
+```{r}
+
+```
+
+
+4. Fit an appropriate Random Forest model. Report a comparison of performance to your linear model and explain any differences in performance. Do you see an important difference in how variables are used for predictions?
+```{r}
+
+```
+
+
+
+
+
+
