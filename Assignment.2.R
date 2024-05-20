@@ -12,6 +12,7 @@ About:
 - In other words, we try to predict from our initial data if the patient is at an elevated risk to die during their hospital stay.
 "
 
+
 setwd("~/School_work/Statistical Methods/Project2")
 load("MI.RData")
 
@@ -25,36 +26,49 @@ load("MI.RData")
 # Check the structure of the dataframe
 str(MI)
 summary(MI)
+table(MI$LET_IS)
 
 # Check for missing data
 colSums(is.na(MI))
 
-# Function to calculate the proportion of missing values
-pMiss <- function(x){sum(is.na(x))/length(x)}
-apply(MI, 2, pMiss)
-
-# check if response var. is a factor
-is.factor(MI$LET_IS)
-
 # Dimensionality 
 dim(MI)
 
-# check for multicollinearity
-library(car)
-aliases <- alias(lm.MI)
-print(aliases)
+# Remove rows with Missing Data 
+MI.clean <- na.omit(MI)
 
-vif_vals <- vif(lm.MI)
+# Check for 'Multicollinearity' using VIF
+glm.MI1 <- glm(LET_IS~., data=MI.clean, family = binomial)
+# aliases <- alias(lm.MI) # find aliases (linearly dependent terms)
+
+library(car) 
+# Check VIF values
+vif_vals <- vif(glm.MI1)
 print(vif_vals)
 
+# Identify high Variance Inflation Factor (VIF) values (VIF > 10; as a rule of thumb)
+high_vif <- names(vif_vals[vif_vals > 10])
+print(high_vif)
 
-high_vif <- 
+# Remove predictors with high VIF (Collinear predictors)
+MI.clean <- MI.clean[, !(names(MI.clean) %in% high_vif)]
+dim(MI.clean) # 100 vars -> 94 vars
+
+# Heatmap to visualize correlation between features
+library(ggcorrplot)
+# Calculate correlation matrix (excluding AGE and SEX)
+corr_matrix <- cor(MI[,4:101], use="pairwise")
+ggcorrplot(corr_matrix, type="lower", colors=c('blue','white','red'))
+
+# OR using 'corrplot'
+library(corrplot)
+corrplot(corr_matrix, method = "color")
 
 "
 # Discuss missing data , multicollinearity, and high dimensionality
 # 100 predictor variables(dimensions)
 Discuss Dimensionality:
-- Number of predictors vs. number of observations.
+- Number of predictors vs number of observations.
 - Potential multicollinearity issues.
 - Implications for model fitting (e.g., overfitting).
 "
@@ -65,60 +79,46 @@ Discuss Dimensionality:
 - Discuss what you find. What is an appropriate base-level of performance to compare your models to?
 "
 
-# remove rows with Missing Data 
-MI.clean <- na.omit(MI)
-dim(MI.clean)
-
 # Cross-validation
 set.seed(1) # for reproducibility
+library(glmnet) # alpha=0: ridge ; alpha=1: lasso
 
 # Create model matrix for predictors
 x <- model.matrix(LET_IS ~ ., MI.clean)[, -1]
-
-# Create response variable
 y <- as.numeric(MI.clean$LET_IS) - 1 # Convert factor to binary numeric (0, 1)
 
-# Check dimensions
-dim(x)
-length(y)
-# Ensured: the same # of row and observations
-
-library(glmnet)
-# alpha=0: ridge ; alpha=1: lasso
-
 # Split data into training and testing sets (train:test=7:3)
-train_index <- sample(1 : nrow(x), nrow(x) * 0.7)
+train_index <- sample(1 : nrow(x), nrow(x) * 0.8)
 x.train <- x[train_index, ]
 y.train <- y[train_index]
 x.test <- x[-train_index, ]
 y.test <- y[-train_index]
 
-## Fit a logistic regression on training set
-lm.MI <- glm(LET_IS ~ ., data = MI.clean[train_index,], family=binomial)
-summary(lm.MI)
+## Fit a logistic regression on training set, linearizing with "binomial(link = logit)"
+glm.MI <- glm(LET_IS ~ ., data = MI.clean[train_index,], family=binomial(link = logit))
+summary(glm.MI)
+coef.glm <- coef(glm.MI)
 
-
-## Fit Lasso-regularized logistic model
+## Fit Lasso regularized logistic model
 lasso.MI <- cv.glmnet(x.train, y.train, familiy = "binomial", alpha = 1) 
 plot(lasso.MI) # plot MSE by lambda value
-bestlm.lasso <- lasso.MI$lambda.min # extract coefficients for the best(smallest) lambda (s: lambda)
-coef(lasso.MI, s = "lambda.min")
+lasso.coef <- coef(lasso.MI)
 
-## Fit Ridge-regularized logistic regression
+## Fit Ridge regularized logistic regression
 ridge.MI <- cv.glmnet(x.train, y.train, familiy = "binomial", alpha = 0) 
 plot(ridge.MI)
-bestlm.ridge <- ridge.MI$lambda.min
-coef(ridge.MI, s = "lambda.min") 
-
+ridge.coef <- coef(ridge.MI) 
 
 ## Compare the performances of linear logistic, lasso, and ridge models using AUC
-# Generate predictions of "response" variable
-linear_pred <- predict(lm.MI, newdata = MI.clean[-train_index, ], type = "response")
-lasso_pred <- predict(lasso.MI, s = bestlm.lasso, newx = x.test, type = "response") 
-ridge_pred <- predict(ridge.MI, s = bestlm.ridge, newx = x.test, type = "response")
+# Generate predictions of response variable
+linear_pred <- predict(glm.MI, newdata = MI.clean[-train_index, ], type = "response") # compute the probabilities by selecting: type = "response"
+lasso_pred <- predict(lasso.MI, newx = x.test, type = "response") 
+ridge_pred <- predict(ridge.MI, newx = x.test, type = "response")
 
+# plot(linear_pred ~ MI.clean[-train_index,]$AGE)
+?predict
 # Ensure predictions are numeric vectors
-linear_pred <- as.vector(linear_pred)
+linear_pred <- as.vector(linear_pred) 
 lasso_pred <- as.vector(lasso_pred)
 ridge_pred <- as.vector(ridge_pred)
 class(lasso_pred)
@@ -136,10 +136,17 @@ roc_lasso <- roc(y.test, lasso_pred)
 roc_ridge <- roc(y.test, ridge_pred)
 
 # Plot ROC curves: y-axis represent Sensitivity; True Positive Rate (TPR), x-axis represents Specificity; False Positive Rate (FPR)
+par(mfrow=c(1,1))
 plot(roc_linear, col = "blue", main = "ROC Curves", xlab="False positive rate\n(1 - specificity)", ylab = "True Positive Rate (Sensitivity)")
 plot(roc_lasso, col = "red", add = TRUE)
 plot(roc_ridge, col = "green", add = TRUE)
 legend("bottomright", legend = c("Linear", "Lasso", "Ridge"), col = c("blue", "red", "green"), lty = 1)
+
+# Evaluate performance
+cat("AUC Linear: ", auc(roc_linear), "\n")
+cat("AUC Lasso: ", auc(roc_lasso), "\n")
+cat("AUC Ridge: ", auc(roc_ridge), "\n")
+# Unconstrained linear model has the highest AUC.
 
 "
 3. 
@@ -147,30 +154,61 @@ legend("bottomright", legend = c("Linear", "Lasso", "Ridge"), col = c("blue", "r
 - How could you accommodate non-linear effects and still use a regularized regression approach? 
 - Does adding non-linear effects improve your model?
 "
-# Check for Non-Linear Effects
-top_predictors <- names(sort(abs(coef(lasso.MI, s = "lambda.min")), decreasing = TRUE))
-pairs(MI.clean[, c(top_predictors, "LET_IS")])
-install.packages("Matrix")
-install.packages('carData')
-library(car)
-# Create partial residual plots for each predictor
-crPlots(lm.MI)
-# Identify top predictors
+# Check for Non-Linear Effects (Non-linearity)
 
+## Residual Plot
+# Get Fitted values for linear model
+fitted_val.lm <- fitted(glm.MI)
+# Get Standardized residuals
+rs.lm <- rstandard(glm.MI)
 
-# Check for linearity: Residual Plot
-# Get fitted values
-fitted_val.lm <- fitted(lm.MI)
-# Get standardized residuals
-rs.lm <- rstandard(lm.MI)
-# shapiro.test(standardized_rs) # p-value < 2.2e-16 (Normality check)
+# Top predictor from glm model based on p-value
+names(sort(summary(glm.MI)$coefficients[, "Pr(>|z|)"]))[1:10]
+# Top predictors for instance: AGE,STENOK_AN, NA_KB 
 
-# Residual against fitted values
+# Plot Residual against Fitted values
 par(mfrow = c(1, 2))
 plot(rs.lm~fitted_val.lm, ylab = "Standard Residuals") # Clearly not random pattern 
-# Residual against each regressor(independent variable)
-plot(rs.lm~MI[train_index,]$AGE , ylab = "Standard Residuals") # Clearly not random pattern 
-abline(0, 0, lty = 2)
+abline(h=0, lty=2)
+
+# Residual against each top predictor
+plot(rs.lm~MI[train_index,]$AGE, main="AGE", ylab = "Standard Residuals") # Clearly not random pattern 
+abline(h=0, lty=2)
+plot(rs.lm~MI[train_index,]$STENOK_AN , main="STENOK_AN", ylab = "Standard Residuals") 
+plot(rs.lm~MI[train_index,]$NA_KB , main="NA_KB", ylab = "Standard Residuals") 
+
+# Partial residual (Component+Residual) plots for the GLM model
+library(car)
+crPlots(glm.MI)
+
+# fitted value vs predictors 'AGE' (test data)
+plot(linear_pred~MI.clean[-train_index,]$AGE) 
+
+
+
+## Polynomial Regression
+# Create polynomial terms 
+
+install.packages("caret")
+library(ggplot2)
+library(lattice)
+library(caret)
+x_train_poly <- polynomialFeatures(x.train, degree = 2)
+
+## Splines
+library(splines)
+
+
+
+# Fit Lasso-regularized logistic model with spline features
+lasso_spline <- cv.glmnet(x.train_spline, y.train, family = "binomial", alpha = 1)
+plot(lasso_spline)
+coef(lasso_spline, s = "lambda.min")
+
+# Fit Ridge-regularized logistic regression with spline features
+ridge_spline <- cv.glmnet(x.train_spline, y.train, family = "binomial", alpha = 0)
+plot(ridge_spline)
+coef(ridge_spline, s = "lambda.min")
 
 "
 Residual vs Fitted values
@@ -185,6 +223,17 @@ Also, the spread of residuals varies with the fitted values, suggesting 'Heteros
 It is reasonable to  include non-linear terms (e.g., polynomial terms, splines) or use a more flexible model like a Generalized Additive Model(GAM).
 "
 
+# Fit Regularized Models with Non-linear terms 
+
+# Fit polynomial regression models
+glm_poly2 <- glm(LET_IS ~ poly(AGE, 2) + ., data = MI.clean[train_index, ], family = binomial)
+glm_poly3 <- glm(LET_IS ~ poly(AGE, 3) + ., data = MI.clean[train_index, ], family = binomial)
+
+# Compare models using AIC
+AIC(glm.MI, glm_poly2, glm_poly3)
+
+
+
 
 
 "
@@ -193,7 +242,19 @@ It is reasonable to  include non-linear terms (e.g., polynomial terms, splines) 
 - Report a comparison of performance to your linear model and explain any differences in performance. 
 - Do you see an important difference in how variables are used for predictions?
 "
+library(randomForest)
+rf_model <- randomForest(LET_IS ~ ., data=MI.clean, ntree=500, mtry=sqrt(ncol(MI.clean) - 1))
+print(rf_model)
 
+rf_pred <- predict(rf_model, type="prob")[,2]
+roc_rf <- roc(y,rf_pred)
 
+# Plot ROC curve
+plot(roc_rf, col="blue", main="Random Forest")
+plot(roc_linear, col = "gray", main = "Linear", add = TRUE)
+plot(roc_lasso, col = "red", main = "Lasso", add = TRUE)
+
+# Examine the feature importance of variables in the Random Forest model.
+varImpPlot(rf_model)
 
 
