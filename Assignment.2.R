@@ -12,7 +12,6 @@ About:
 - In other words, we try to predict from our initial data if the patient is at an elevated risk to die during their hospital stay.
 "
 
-
 setwd("~/School_work/Statistical Methods/Project2")
 load("MI.RData")
 
@@ -26,60 +25,49 @@ load("MI.RData")
 # Check the structure of the dataframe
 str(MI)
 summary(MI)
-table(MI$LET_IS)
+# Dimensionality 
+dim(MI)
+# row:1700  column:101
 
 # Check for missing data
 colSums(is.na(MI))
 
-# Dimensionality 
-dim(MI)
-
 # Remove rows with Missing Data 
-MI.clean <- na.omit(MI)
+MI.clean <- na.omit(MI) # cases: 1700 -> 1695
+
+# Get frequency table
+table(MI.clean$LET_IS)
 
 # Check for 'Multicollinearity' using VIF
 glm.MI1 <- glm(LET_IS~., data=MI.clean, family = binomial)
 # aliases <- alias(lm.MI) # find aliases (linearly dependent terms)
-
-library(car) 
-# Check VIF values
+summary(glm.MI1)
+# Check VIF values for collinearity inspection 
+library(car)
 vif_vals <- vif(glm.MI1)
-print(vif_vals)
-
-# Identify high Variance Inflation Factor (VIF) values (VIF > 10; as a rule of thumb)
+# Identify high Variance Inflation Factor (VIF) values (VIF > 10)
 high_vif <- names(vif_vals[vif_vals > 10])
 print(high_vif)
 
 # Remove predictors with high VIF (Collinear predictors)
 MI.clean <- MI.clean[, !(names(MI.clean) %in% high_vif)]
-dim(MI.clean) # 100 vars -> 94 vars
+dim(MI.clean) # variables: 100 -> 94
 
 # Heatmap to visualize correlation between features
 library(ggcorrplot)
 # Calculate correlation matrix (excluding AGE and SEX)
 corr_matrix <- cor(MI[,4:101], use="pairwise")
 ggcorrplot(corr_matrix, type="lower", colors=c('blue','white','red'))
-
 # OR using 'corrplot'
 library(corrplot)
 corrplot(corr_matrix, method = "color")
 
-"
-# Discuss missing data , multicollinearity, and high dimensionality
-# 100 predictor variables(dimensions)
-Discuss Dimensionality:
-- Number of predictors vs number of observations.
-- Potential multicollinearity issues.
-- Implications for model fitting (e.g., overfitting).
-"
 
 "
 2. 
 - Fit and compare an appropriate unconstrained linear model, as well as lasso and ridge regression models. 
 - Discuss what you find. What is an appropriate base-level of performance to compare your models to?
 "
-
-# Cross-validation
 set.seed(1) # for reproducibility
 library(glmnet) # alpha=0: ridge ; alpha=1: lasso
 
@@ -87,15 +75,18 @@ library(glmnet) # alpha=0: ridge ; alpha=1: lasso
 x <- model.matrix(LET_IS ~ ., MI.clean)[, -1]
 y <- as.numeric(MI.clean$LET_IS) - 1 # Convert factor to binary numeric (0, 1)
 
-# Split data into training and testing sets (train:test=7:3)
+# Split data into training and testing sets 
 train_index <- sample(1 : nrow(x), nrow(x) * 0.8)
 x.train <- x[train_index, ]
 y.train <- y[train_index]
 x.test <- x[-train_index, ]
 y.test <- y[-train_index]
+MI.train <- MI.clean[train_index,]
+MI.test <- MI.clean[-train_index,]
 
-## Fit a logistic regression on training set, linearizing with "binomial(link = logit)"
-glm.MI <- glm(LET_IS ~ ., data = MI.clean[train_index,], family=binomial(link = logit))
+
+## Fit a logistic regression on training set
+glm.MI <- glm(LET_IS ~ ., data = MI.train, family=binomial)
 summary(glm.MI)
 coef.glm <- coef(glm.MI)
 
@@ -110,15 +101,15 @@ plot(ridge.MI)
 ridge.coef <- coef(ridge.MI) 
 
 ## Compare the performances of linear logistic, lasso, and ridge models using AUC
-# Generate predictions of response variable
-linear_pred <- predict(glm.MI, newdata = MI.clean[-train_index, ], type = "response") # compute the probabilities by selecting: type = "response"
+# Generate predictions of response variable using Test data
+linear_pred <- predict(glm.MI, newdata = MI.test, type = "response") # compute the probabilities by selecting: type = "response"
 lasso_pred <- predict(lasso.MI, newx = x.test, type = "response") 
 ridge_pred <- predict(ridge.MI, newx = x.test, type = "response")
 
-# plot(linear_pred ~ MI.clean[-train_index,]$AGE)
-?predict
+plot(linear_pred ~ MI.test$AGE)
+
 # Ensure predictions are numeric vectors
-linear_pred <- as.vector(linear_pred) 
+linear_pred <- as.vector(linear_pred)
 lasso_pred <- as.vector(lasso_pred)
 ridge_pred <- as.vector(ridge_pred)
 class(lasso_pred)
@@ -156,48 +147,63 @@ cat("AUC Ridge: ", auc(roc_ridge), "\n")
 "
 # Check for Non-Linear Effects (Non-linearity)
 
-## Residual Plot
+# Top predictor from linear model based on p-value
+top_predictors <- names(sort(summary(glm.MI)$coefficients[, "Pr(>|z|)"]))[1:10]
+# Top predictor from lasso model based on coefficient(≠0)
+top_predictors.lasso <- rownames(lasso.coef)[which(lasso.coef!=0)]
+
+# Top predictors for instance: AGE, STENOK_AN, NA_KB
+
+par(mfrow=c(2,2))
+# Function to plot predictor against response
+plot_predic_resp <- function(predictor) {
+  ggplot(MI.test, aes_string(x = predictor, y = "LET_IS")) +
+    geom_jitter(alpha = 0.1) +                      # make dots visible with jitters
+    geom_smooth(method = "loess", color = "blue") + # add Loess line
+    labs(title = paste("Predictor:", predictor), x = predictor, y = "LET_IS")
+}
+# Loop through top predictors and print plots
+for (predictor in top_predictors) {
+  print(plot_predic_resp(predictor))
+}
+
+## Residual Plot to check non-linearity
 # Get Fitted values for linear model
 fitted_val.lm <- fitted(glm.MI)
 # Get Standardized residuals
+
 rs.lm <- rstandard(glm.MI)
-
-# Top predictor from glm model based on p-value
-names(sort(summary(glm.MI)$coefficients[, "Pr(>|z|)"]))[1:10]
-# Top predictors for instance: AGE,STENOK_AN, NA_KB 
-
 # Plot Residual against Fitted values
 par(mfrow = c(1, 2))
-plot(rs.lm~fitted_val.lm, ylab = "Standard Residuals") # Clearly not random pattern 
+plot(rs.lm~fitted_val.lm, main="Residual vs Fitted value", ylab = "Standard Residuals") # Clearly not random pattern 
 abline(h=0, lty=2)
 
 # Residual against each top predictor
-plot(rs.lm~MI[train_index,]$AGE, main="AGE", ylab = "Standard Residuals") # Clearly not random pattern 
+plot(rs.lm~MI.train$AGE, main="AGE", ylab = "Standard Residuals") # Clearly not random pattern 
 abline(h=0, lty=2)
-plot(rs.lm~MI[train_index,]$STENOK_AN , main="STENOK_AN", ylab = "Standard Residuals") 
-plot(rs.lm~MI[train_index,]$NA_KB , main="NA_KB", ylab = "Standard Residuals") 
+plot(rs.lm~MI.train$STENOK_AN , main="STENOK_AN", ylab = "Standard Residuals") 
+plot(rs.lm~MI.train$NA_KB , main="NA_KB", ylab = "Standard Residuals") 
 
 # Partial residual (Component+Residual) plots for the GLM model
 library(car)
 crPlots(glm.MI)
 
 # fitted value vs predictors 'AGE' (test data)
-plot(linear_pred~MI.clean[-train_index,]$AGE) 
-
-
+plot(linear_pred~MI.test$AGE) 
 
 ## Polynomial Regression
 # Create polynomial terms 
-
-install.packages("caret")
 library(ggplot2)
 library(lattice)
 library(caret)
-x_train_poly <- polynomialFeatures(x.train, degree = 2)
+
+# Create polynomial features for training and test sets
+x_train_poly_2 <- polynomialFeatures(x.train, degree = 2)
+poly_feats <- preProcess(MI.clean[,-1], method = "poly", degree = 2, pca = FALSE)
+MI.poly <- predict(poly_feats, MI.clean[, -1])
 
 ## Splines
 library(splines)
-
 
 
 # Fit Lasso-regularized logistic model with spline features
@@ -210,31 +216,16 @@ ridge_spline <- cv.glmnet(x.train_spline, y.train, family = "binomial", alpha = 
 plot(ridge_spline)
 coef(ridge_spline, s = "lambda.min")
 
-"
-Residual vs Fitted values
-The plot exhibited the non-random scatter pattern, which indicate non-linear relationships between the predictors and the response variables.
-
-Residual vs AGE
-(The other plot of shows Residual against one of the top predictors, 'AGE'.)
-The plot also exhibited non-random scatter pattern, which also support non-linearity
-
-Also, the spread of residuals varies with the fitted values, suggesting 'Heteroscedasticity' (the variance of the residuals is not constant). 
-
-It is reasonable to  include non-linear terms (e.g., polynomial terms, splines) or use a more flexible model like a Generalized Additive Model(GAM).
-"
-
 # Fit Regularized Models with Non-linear terms 
+# Create polynomial terms for each predictor
+library(caret)
+poly_features <- preProcess(MI.clean[, -1], method = "poly", degree = 2, pca = FALSE)
+MI.poly <- predict(poly_features, MI.clean[, -1])
 
-# Fit polynomial regression models
-glm_poly2 <- glm(LET_IS ~ poly(AGE, 2) + ., data = MI.clean[train_index, ], family = binomial)
-glm_poly3 <- glm(LET_IS ~ poly(AGE, 3) + ., data = MI.clean[train_index, ], family = binomial)
+# Combine with the response variable
+MI.poly <- cbind(MI.poly, LET_IS = MI.clean$LET_IS)
 
-# Compare models using AIC
-AIC(glm.MI, glm_poly2, glm_poly3)
-
-
-
-
+# GAM
 
 "
 4. 
@@ -243,18 +234,28 @@ AIC(glm.MI, glm_poly2, glm_poly3)
 - Do you see an important difference in how variables are used for predictions?
 "
 library(randomForest)
-rf_model <- randomForest(LET_IS ~ ., data=MI.clean, ntree=500, mtry=sqrt(ncol(MI.clean) - 1))
+rf_model <- randomForest(LET_IS ~ ., data=MI.train, mtry=sqrt(ncol(MI.train) - 1), importance=TRUE) 
 print(rf_model)
 
-rf_pred <- predict(rf_model, type="prob")[,2]
-roc_rf <- roc(y,rf_pred)
+# Examine the feature importance of variables in the Random Forest model.
+importance(rf_model)
+varImpPlot(rf_model)
+
+# Generate prediction with rf model on test data
+rf_pred <- predict(rf_model, newdata = MI.test, type="prob")[,2]
+as.vector(MI.test$LET_IS)
+roc_rf <- roc(as.numeric(MI.test$LET_IS)-1, rf_pred)
 
 # Plot ROC curve
-plot(roc_rf, col="blue", main="Random Forest")
-plot(roc_linear, col = "gray", main = "Linear", add = TRUE)
+par(mfrow=c(1,1))
+plot(roc_rf, col="green", main="Random Forest", xlab = "False positive rate\n(1 - specificity)")
+plot(roc_linear, col = "blue", main = "Linear", add = TRUE)
 plot(roc_lasso, col = "red", main = "Lasso", add = TRUE)
+legend("bottomright", legend = c("Random Forest", "Linear", "Lasso"), col = c("green", "blue", "red"), lty = 1)
 
-# Examine the feature importance of variables in the Random Forest model.
-varImpPlot(rf_model)
+# Evaluate performance
+cat("AUC Random Forest: ", auc(roc_rf), "\n") # 0.9094811 
+cat("AUC Linear: ", auc(roc_linear), "\n") # 0.8634441 
+cat("AUC Lasso: ", auc(roc_lasso), "\n") # 0.8220729 
 
 
