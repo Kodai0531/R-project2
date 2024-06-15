@@ -1,7 +1,7 @@
-library("randomForest")
+library(randomForest)
 library(gam)
-library("tree")
-library("MASS")
+library(tree)
+library(MASS)
 library(glmnet)#lasso and ridge
 library(splines)
 library(ggplot2)
@@ -56,7 +56,6 @@ dev.off()
 # Many of the variables have very irregular distributions; some variables are semi-categorical, some (also) are v. unbalanced
 
 # Examine correlations between the subset of more continuous variables
-
 cont=c(1,2,35,36,82,84,85,86,87,88,89) # vector of cols for pair plots 
 pdf(paste("pairs.pdf",sep=""),height=100,width=100)
 pairs(MI[,cont]) 
@@ -88,37 +87,45 @@ test=(-train)
 # due to the imbalance in the response, the base level performance is not simply 50/50.
 # As a base-level of performance can be taken a simple classifier with no/minimal learning (always FALSE for example) or a nearest neighbor approach. 
 
-# Base-level performance using a simple classifier (only intercept) empty model
-model0=glm(y~1,data=x2,subset=train,family="binomial")#only intercept, simply choosing majority in effect
-predEmpty = predict(model0,newdata=x2[test,],type="response")
-res=predEmpty>0.5
-table(y[test],res) 
+# Base-level performance using a simple classifier (only intercept):Empty(null) model >> provide 'Baseline performance'
+model0=glm(y~1,data=x2,subset=train,family="binomial") #only intercept, simply choosing majority in effect
+predEmpty = predict(model0,newdata=x2[test,], type="response")
+res=predEmpty>0.5 # converts probabilities into binary outcomes(predictions). TRUE(1) if >0.5, FALSE(0) if <0.5
+table(y[test],res) # confusion matrix: counts true and predicted class labels: the performance with True positive, False negative, etc.
+# y[test]: True vals; res: predicted vals
 
 #I use the accuracy as a performance measure here, as it is the simplest one. 
+performanceEmpty=length(which(res==y[test]))/length(y[test]) # Accuracy: Number of Correct predictions/Total number of Observations
+performanceEmpty # the ratio of correct predictions out of the total number of predictions.
 
-performanceEmpty=length(which(res==y[test]))/length(y[test])
-performanceEmpty
-
-#Other measures are certainly possible, or even preferable, such as the Area under the Receiver Operating Curve (AUC)
-
+#Other measures: Area Under the Receiver Operating Curve (AUC)
 roc_obj <- roc(y[test], predEmpty)
 plot(roc_obj,print.auc=TRUE)
 auc(roc_obj)
 
-#Fit and compare an -appropriate- unconstrained linear model, as well as lasso and ridge regression models. 
-model3=glm(y~.,data=x2,subset=train,family="binomial") #full unconstrained model
+#Fit and compare an -appropriate- unconstrained linear model, as well as 'lasso' and 'ridge' regression models. 
+model3=glm(y~., data=x2, subset=train, family="binomial") #full unconstrained model
 #glm.fit: fitted probabilities numerically 0 or 1 occurred
 predFull = predict(model3,newdata=x2[test,],type="response")
 res=predFull>0.5
 table(y[test],res) 
 performanceFull=length(which(res==y[test]))/length(y[test])
-performanceFull#worse than just the intercept! High variance component in the error, most likely.
+performanceFull #Worse than just the intercept! High variance component in the error, most likely.
+
 #The warning messages point to problems with this data set and fitting the model, 
 #most likely related to limited observations for some predictor and response values
 
-#I follow a forward/backward approach. Greedy fwd with AIC, more stringent bwd with Chisq tests
-model4=stepAIC(model0,direction="forward",scope=list(upper=model3,lower=model0))
+# Forward/Backward stepwise selection approach to refine the model.
+# Greedy fwd (Adding one by one) with AIC, more stringent bwd with Chisq tests
+# why AIC and Chisq?: AIC > useful for adding var; Chi-sq > useful for individual predictor's contribution.
+library(MASS)
+model4=stepAIC(model0,direction="forward",scope=list(upper=model3,lower=model0)) # scope: define upper(full)/lower(just intercept) models
 c=coefficients(summary(model4))
+# fwd why once? >> selection stops once no additional predictor significantly lowers the AIC
+# Forward selection identifies the most promising variables for inclusion
+# Next, additional refinement with backward selection by removing less significant predictors.
+
+# Backwards selection with Chisq test: removing one by one from the model fit in fwd.
 model5=update(model4, . ~ . -GT_POST )
 anova(model4,model5,test='Chisq')
 summary(model5)
@@ -145,9 +152,11 @@ anova(model11,model12,test='Chisq')
 summary(model12)
 model13=update(model12, . ~ . -np10 )
 anova(model12,model13,test='Chisq')
-summary(model13)#can not be dropped
+summary(model13) # can not be dropped
+coefficients(summary(model13))
 
-#normal GLM regression with minimal selected variables
+
+# Normal GLM regression with minimal selected variables
 predGLM = predict(model12,newdata=x2[test,],type="response")
 res=predGLM>0.5
 table(y[test],res) 
@@ -157,9 +166,9 @@ roc_obj <- roc(y[test], predGLM)
 plot(roc_obj,print.auc=TRUE)
 auc(roc_obj)
 
-#fit and compare lasso and ridge regression models
+# Fit and compare 'lasso' and 'ridge' regression models
 set.seed(10)
-grid =10^seq (0,-5, length =100)
+grid =10^seq (0,-5, length =100) #Defines a sequence of lambda values (regularization parameters) to be tested.
 modelLASSO =cv.glmnet(x=as.matrix(x2[train,-1]),y[train],alpha =1, lambda =grid,family="binomial")
 par(mfrow=c(1,1))
 plot(modelLASSO)#the effect of high variance with complete models is v.clear
@@ -168,9 +177,10 @@ modelLASSO.pred = predict(modelLASSO,s=modelLASSO.bestLambda, newx=as.matrix(x2[
 resLasso=modelLASSO.pred>0.5
 table(y[test],resLasso)
 performanceLASSO=length(which(resLasso==y[test]))/length(y[test])
+# Extract coeff from lasso model
 vals=predict(modelLASSO,s=modelLASSO.bestLambda,type="coefficients")
 
-#ridge
+# ridge
 set.seed(10)
 modelRIDGE =cv.glmnet(x=as.matrix(x2[train,]),y[train],alpha =0, lambda =grid,family="binomial")
 plot(modelRIDGE)#a more regular curve than Lasso
@@ -190,18 +200,22 @@ performanceFull
 performanceGLM
 performanceRidge
 performanceLASSO
-#the linear models show modest performance effects
-
+# the linear models show modest performance effects
 
 ##3. Among your top predictors, do you see evidence of non-linear effects? 
-#How could you accom- modate non-linear effects and still use a regularized regression approach? 
+#How could you accommodate non-linear effects and still use a regularized regression approach? 
 #Does adding non-linear effects improve your model?
 
 #lets look at the LASSO selected values
 vals
-modelGAM1=gam(y~s(KFK_BLOOD,4),data=x2,subset=train,family="binomial")
-summary(modelGAM1)#quite strong effect
+# fit a GAM to assess the non-linear effect for top-predictor: KFK_BLOOD (why?)
+modelGAM1=gam(y~s(KFK_BLOOD,4), data=x2, subset=train, family="binomial")
+# s(): smooth term for KFK_BLOOD with 4 degree of freedom
+summary(modelGAM1)
+# highly significant p value in 'Non-parametric effect': non-linear component of 'KFK_BLOOD' significantly improved
+# >> strong non-linear effect
 plot(modelGAM1)
+
 #the correlated D_AD_ORIT and S_AD_ORIT are also interesting
 modelGAM2=gam(y~s(D_AD_ORIT,4)+s(S_AD_ORIT,4),data=x2[,],subset=train,family="binomial")
 summary(modelGAM2)
