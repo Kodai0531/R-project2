@@ -71,7 +71,7 @@ set.seed(5)
 # but let's avoid loosing one TRUE response and do imputation
 y=as.factor(MI$LET_IS)
 x=MI[,-1]
-x2=rfImpute(x,y,iter=5,ntree=300)[,-1]# one approach to infer values
+x2=rfImpute(x,y,iter=5,ntree=300)[,-1] # one approach to infer values
 
 
 ##2. Fit and compare an appropriate unconstrained linear model, as well as lasso and ridge regression models.
@@ -127,34 +127,35 @@ c=coefficients(summary(model4))
 
 # Backwards selection with Chisq test: removing one by one from the model fit in fwd.
 model5=update(model4, . ~ . -GT_POST )
-anova(model4,model5,test='Chisq')
+# anova(complex, simpler) check if simpler model is significantly worse (complex model is better aka adding the param improve the model) 
+anova(model4,model5,test='Chisq') # not to drop
 summary(model5)
 model6=update(model5, . ~ . -ROE )
-anova(model5,model6,test='Chisq')
+anova(model5,model6,test='Chisq') # significant > not
 summary(model6)
 model7=update(model6, . ~ . -n_p_ecg_p_01 )
-anova(model6,model7,test='Chisq')
+anova(model6,model7,test='Chisq') # significant > not
 summary(model7)
 model8=update(model7, . ~ . -n_r_ecg_p_03 )
-anova(model7,model8,test='Chisq')
+anova(model7,model8,test='Chisq') # not to drop
 summary(model8)
 model9=update(model8, . ~ . -zab_leg_01 )
-anova(model8,model9,test='Chisq')
+anova(model8,model9,test='Chisq') # significant > not
 summary(model9)
 model10=update(model9, . ~ . -NOT_NA_KB )
-anova(model9,model10,test='Chisq')
+anova(model9,model10,test='Chisq') # drop
 summary(model10)
 model11=update(model10, . ~ . -np08 )
-anova(model10,model11,test='Chisq')
+anova(model10,model11,test='Chisq') # not to drop
 summary(model11)
 model12=update(model11, . ~ . -IBS_NASL )
-anova(model11,model12,test='Chisq')
+anova(model11,model12,test='Chisq') # drop
 summary(model12)
 model13=update(model12, . ~ . -np10 )
-anova(model12,model13,test='Chisq')
-summary(model13) # can not be dropped
+anova(model12,model13,test='Chisq') # not to drop
+summary(model13) 
+# can't be dropped since doing so doesn't change the model deviance and degree of freedom, indicating the parameter is essential or the models are identical in terms of fit.
 coefficients(summary(model13))
-
 
 # Normal GLM regression with minimal selected variables
 predGLM = predict(model12,newdata=x2[test,],type="response")
@@ -169,7 +170,7 @@ auc(roc_obj)
 # Fit and compare 'lasso' and 'ridge' regression models
 set.seed(10)
 grid =10^seq (0,-5, length =100) #Defines a sequence of lambda values (regularization parameters) to be tested.
-modelLASSO =cv.glmnet(x=as.matrix(x2[train,-1]),y[train],alpha =1, lambda =grid,family="binomial")
+modelLASSO =cv.glmnet(x=as.matrix(x2[train,-1]),y[train], alpha =1, lambda =grid,family="binomial")
 par(mfrow=c(1,1))
 plot(modelLASSO)#the effect of high variance with complete models is v.clear
 modelLASSO.bestLambda = modelLASSO$lambda.min
@@ -202,7 +203,7 @@ performanceRidge
 performanceLASSO
 # the linear models show modest performance effects
 
-##3. Among your top predictors, do you see evidence of non-linear effects? 
+##3. Among your 'top predictors', do you see evidence of non-linear effects? 
 #How could you accommodate non-linear effects and still use a regularized regression approach? 
 #Does adding non-linear effects improve your model?
 
@@ -218,24 +219,32 @@ plot(modelGAM1)
 
 #the correlated D_AD_ORIT and S_AD_ORIT are also interesting
 modelGAM2=gam(y~s(D_AD_ORIT,4)+s(S_AD_ORIT,4),data=x2[,],subset=train,family="binomial")
-summary(modelGAM2)
+summary(modelGAM2) # also both showed non-linear effects
 par(mfrow=c(2,1))
 plot(modelGAM2)
 par(mfrow=c(1,1))
-#let's take the matrix with these selected coefficients and account for non-linear effects in two ways
-x3=x2[,as.array(!vals==0)]
-#first add some polynomials for KFK_BLOOD
-x3$KFK_BLOOD2=x3$KFK_BLOOD*x3$KFK_BLOOD
-x3$KFK_BLOOD3=x3$KFK_BLOOD2*x3$KFK_BLOOD
-#we can also cheat a bit and use modelGAM2 to recode the variables
-x3$AD_ORIT_GAM=predict(modelGAM2,newdata = x2,type="response")
 
+# Let's take the matrix with these selected coefficients and account for non-linear effects in two ways
+# Prepare Data for regularized model with non-linear terms
+# create new dataset 'x3' incorporating non-linear terms for the top predictors.
+x3=x2[,as.array(!vals==0)] # select vars with non-zero coefficients from Lasso
+#first add some polynomials for KFK_BLOOD
+x3$KFK_BLOOD2=x3$KFK_BLOOD*x3$KFK_BLOOD # Square term for 'KFK_BLOOD'
+x3$KFK_BLOOD3=x3$KFK_BLOOD2*x3$KFK_BLOOD # Cubic term for 'KFK_BLOOD'
+
+# We can also cheat a bit and use modelGAM2 to recode the variables
+# Adds a new var predicted by 'modelGAM2' capturing non-linear effects of 'D_AD_ORIT' and 'S_AD_ORIT'.
+x3$AD_ORIT_GAM=predict(modelGAM2,newdata=x2,type="response") 
+
+# Fit Ridge Regression with Non-Linear Effects by using new dataset x3
 modelRIDGE_NLeffects =cv.glmnet(x=as.matrix(x3[train,]),y[train],alpha =0, lambda =grid,family="binomial")
 plot(modelRIDGE_NLeffects)#a more regular curve than Lasso
+
 modelRIDGE_NLeffects.bestLambda = modelRIDGE_NLeffects$lambda.min 
 modelRIDGE_NLeffects.pred = predict(modelRIDGE_NLeffects,s=modelRIDGE_NLeffects.bestLambda, newx=as.matrix(x3[test,]),type="response")
 resRidge_nl=modelRIDGE_NLeffects.pred>0.5
-table(y[test],resRidge_nl) 
+table(y[test],resRidge_nl)
+# calculate the performance
 performanceRidge_NLeffects=length(which(resRidge_nl==y[test]))/length(y[test])
 vals2=predict(modelRIDGE_NLeffects,s=modelRIDGE.bestLambda,type="coefficients")
 roc_obj <- roc(y[test], modelRIDGE_NLeffects.pred[,1])
@@ -244,22 +253,27 @@ auc(roc_obj)
 #so this is a tiny bit better! 
 
 #4. Fit an appropriate Random Forest model. 
-#Report a comparison of performance to your linear model and explain any differences in performance. 
-#Do you see an important difference in how variables are used for predictions?
+# Report a comparison of performance to your linear model and explain any differences in performance. 
+# Do you see an important difference in how variables are used for predictions?
 
 rf=randomForest(y=y[train],x=x2[train,],mtry=(sqrt(ncol(x))),importance=TRUE,ntree=1000,nodesize=20) 
-predRF = predict(rf,newdata=x2[test,])
+# mtry: # of randomly sampled as candidates at each split; importance: variable importance is calculated; nodesize: min size of terminal nodes
+predRF = predict(rf,newdata=x2[test,]) 
+# Evaluate performance
 table(y[test],predRF) 
 performanceRF=length(which(predRF==y[test]))/length(y[test])
 performanceRF #best up until now
+# Variable importance
 imp=importance(rf)
-varImpPlot (rf)
-
+varImpPlot(rf)
+# ROC Curve and AUC
 roc_obj <- roc(y[test], modelRIDGE_NLeffects.pred[,1])
 plot(roc_obj,print.auc=TRUE)
 auc(roc_obj) #same as for the nl-ridge
 
-#let's see the variables selected by LASSO vs their RF importance scores
+# Compare LASSO and Random Forest Variable importance
+# let's see the variables selected by LASSO vs their RF importance scores
+# Matches the variable names from the importance table to those from the Lasso model coefficients.
 i=match(rownames(imp),rownames(vals))
 plot(as.factor(!vals[i]==0),imp[,4])
 #Clearly related, but not perfectly. Some values have reasonable scores, but are not in the LASSO model
@@ -268,6 +282,7 @@ pvals=coef(summary(model12))[-1,4]
 i2=match(names(pvals),rownames(imp))
 plot(log(pvals),imp[i2,4])
 summary(lm(log(pvals)~imp[i2,4]))
+
 #a very modest relation! 
 #The two modeling approaches relate the predictors v. differently to the response
 #The trees are much more apt at dealing with the near categorical data we have hear
